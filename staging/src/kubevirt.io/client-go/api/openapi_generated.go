@@ -392,6 +392,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"kubevirt.io/api/core/v1.InterfacePasst":                                                     schema_kubevirtio_api_core_v1_InterfacePasst(ref),
 		"kubevirt.io/api/core/v1.InterfaceSRIOV":                                                     schema_kubevirtio_api_core_v1_InterfaceSRIOV(ref),
 		"kubevirt.io/api/core/v1.InterfaceSlirp":                                                     schema_kubevirtio_api_core_v1_InterfaceSlirp(ref),
+		"kubevirt.io/api/core/v1.InterfaceVDPA":                                                      schema_kubevirtio_api_core_v1_InterfaceVDPA(ref),
 		"kubevirt.io/api/core/v1.KSMConfiguration":                                                   schema_kubevirtio_api_core_v1_KSMConfiguration(ref),
 		"kubevirt.io/api/core/v1.KVMTimer":                                                           schema_kubevirtio_api_core_v1_KVMTimer(ref),
 		"kubevirt.io/api/core/v1.KernelBoot":                                                         schema_kubevirtio_api_core_v1_KernelBoot(ref),
@@ -18382,6 +18383,11 @@ func schema_kubevirtio_api_core_v1_Interface(ref common.ReferenceCallback) commo
 							Ref: ref("kubevirt.io/api/core/v1.InterfaceSRIOV"),
 						},
 					},
+					"vdpa": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("kubevirt.io/api/core/v1.InterfaceVDPA"),
+						},
+					},
 					"macvtap": {
 						SchemaProps: spec.SchemaProps{
 							Ref: ref("kubevirt.io/api/core/v1.InterfaceMacvtap"),
@@ -18459,7 +18465,7 @@ func schema_kubevirtio_api_core_v1_Interface(ref common.ReferenceCallback) commo
 			},
 		},
 		Dependencies: []string{
-			"kubevirt.io/api/core/v1.DHCPOptions", "kubevirt.io/api/core/v1.InterfaceBridge", "kubevirt.io/api/core/v1.InterfaceMacvtap", "kubevirt.io/api/core/v1.InterfaceMasquerade", "kubevirt.io/api/core/v1.InterfacePasst", "kubevirt.io/api/core/v1.InterfaceSRIOV", "kubevirt.io/api/core/v1.InterfaceSlirp", "kubevirt.io/api/core/v1.Port"},
+			"kubevirt.io/api/core/v1.DHCPOptions", "kubevirt.io/api/core/v1.InterfaceBridge", "kubevirt.io/api/core/v1.InterfaceMacvtap", "kubevirt.io/api/core/v1.InterfaceMasquerade", "kubevirt.io/api/core/v1.InterfacePasst", "kubevirt.io/api/core/v1.InterfaceSRIOV", "kubevirt.io/api/core/v1.InterfaceSlirp", "kubevirt.io/api/core/v1.InterfaceVDPA", "kubevirt.io/api/core/v1.Port"},
 	}
 }
 
@@ -18490,6 +18496,11 @@ func schema_kubevirtio_api_core_v1_InterfaceBindingMethod(ref common.ReferenceCa
 							Ref: ref("kubevirt.io/api/core/v1.InterfaceSRIOV"),
 						},
 					},
+					"vdpa": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("kubevirt.io/api/core/v1.InterfaceVDPA"),
+						},
+					},
 					"macvtap": {
 						SchemaProps: spec.SchemaProps{
 							Ref: ref("kubevirt.io/api/core/v1.InterfaceMacvtap"),
@@ -18504,7 +18515,7 @@ func schema_kubevirtio_api_core_v1_InterfaceBindingMethod(ref common.ReferenceCa
 			},
 		},
 		Dependencies: []string{
-			"kubevirt.io/api/core/v1.InterfaceBridge", "kubevirt.io/api/core/v1.InterfaceMacvtap", "kubevirt.io/api/core/v1.InterfaceMasquerade", "kubevirt.io/api/core/v1.InterfacePasst", "kubevirt.io/api/core/v1.InterfaceSRIOV", "kubevirt.io/api/core/v1.InterfaceSlirp"},
+			"kubevirt.io/api/core/v1.InterfaceBridge", "kubevirt.io/api/core/v1.InterfaceMacvtap", "kubevirt.io/api/core/v1.InterfaceMasquerade", "kubevirt.io/api/core/v1.InterfacePasst", "kubevirt.io/api/core/v1.InterfaceSRIOV", "kubevirt.io/api/core/v1.InterfaceSlirp", "kubevirt.io/api/core/v1.InterfaceVDPA"},
 	}
 }
 
@@ -18568,6 +18579,17 @@ func schema_kubevirtio_api_core_v1_InterfaceSlirp(ref common.ReferenceCallback) 
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Description: "InterfaceSlirp connects to a given network using QEMU user networking mode.",
+				Type:        []string{"object"},
+			},
+		},
+	}
+}
+
+func schema_kubevirtio_api_core_v1_InterfaceVDPA(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "InterfaceVDPA connects to a given network by passing-through an SR-IOV PCI device via vdpa.",
 				Type:        []string{"object"},
 			},
 		},

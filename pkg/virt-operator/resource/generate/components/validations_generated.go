@@ -5904,6 +5904,10 @@ var CRDsValidation map[string]string = map[string]string{
                                   address and its tag will be provided to the guest
                                   via config drive
                                 type: string
+                              vdpa:
+                                description: InterfaceVDPA connects to a given network
+                                  by passing-through an SR-IOV PCI device via vdpa.
+                                type: object
                             required:
                             - name
                             type: object
@@ -10371,6 +10375,10 @@ var CRDsValidation map[string]string = map[string]string{
                         description: If specified, the virtual network interface address
                           and its tag will be provided to the guest via config drive
                         type: string
+                      vdpa:
+                        description: InterfaceVDPA connects to a given network by
+                          passing-through an SR-IOV PCI device via vdpa.
+                        type: object
                     required:
                     - name
                     type: object
@@ -13022,6 +13030,10 @@ var CRDsValidation map[string]string = map[string]string{
                         description: If specified, the virtual network interface address
                           and its tag will be provided to the guest via config drive
                         type: string
+                      vdpa:
+                        description: InterfaceVDPA connects to a given network by
+                          passing-through an SR-IOV PCI device via vdpa.
+                        type: object
                     required:
                     - name
                     type: object
@@ -15155,6 +15167,10 @@ var CRDsValidation map[string]string = map[string]string{
                                   address and its tag will be provided to the guest
                                   via config drive
                                 type: string
+                              vdpa:
+                                description: InterfaceVDPA connects to a given network
+                                  by passing-through an SR-IOV PCI device via vdpa.
+                                type: object
                             required:
                             - name
                             type: object
@@ -19428,6 +19444,11 @@ var CRDsValidation map[string]string = map[string]string{
                                           interface address and its tag will be provided
                                           to the guest via config drive
                                         type: string
+                                      vdpa:
+                                        description: InterfaceVDPA connects to a given
+                                          network by passing-through an SR-IOV PCI
+                                          device via vdpa.
+                                        type: object
                                     required:
                                     - name
                                     type: object
@@ -24498,6 +24519,11 @@ var CRDsValidation map[string]string = map[string]string{
                                               will be provided to the guest via config
                                               drive
                                             type: string
+                                          vdpa:
+                                            description: InterfaceVDPA connects to
+                                              a given network by passing-through an
+                                              SR-IOV PCI device via vdpa.
+                                            type: object
                                         required:
                                         - name
                                         type: object
