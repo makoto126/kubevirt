@@ -581,6 +581,11 @@ func domainMigrated(domain *api.Domain) bool {
 	if domain != nil && domain.Status.Status == api.Shutoff && domain.Status.Reason == api.ReasonMigrated {
 		return true
 	}
+	if domain != nil && domain.Spec.Metadata.KubeVirt.Migration != nil &&
+		domain.Spec.Metadata.KubeVirt.Migration.Completed &&
+		!domain.Spec.Metadata.KubeVirt.Migration.Failed {
+		return true
+	}
 	return false
 }
 
@@ -1639,6 +1644,12 @@ func (d *VirtualMachineController) migrationOrphanedSourceNodeExecute(vmi *v1.Vi
 
 func (d *VirtualMachineController) migrationTargetExecute(vmi *v1.VirtualMachineInstance, vmiExists bool, domain *api.Domain) error {
 
+	vmi.Annotations["migrationWithHostDevice"] = fmt.Sprintf("%t", len(domain.Spec.Devices.HostDevices) > 0)
+	_, err := d.clientset.VirtualMachineInstance(vmi.ObjectMeta.Namespace).Update(context.Background(), vmi)
+	if err != nil {
+		return err
+	}
+
 	// set to true when preparation of migration target should be aborted.
 	shouldAbort := false
 	// set to true when VirtualMachineInstance migration target needs to be prepared
@@ -2469,13 +2480,18 @@ func (d *VirtualMachineController) handleTargetMigrationProxy(vmi *v1.VirtualMac
 	baseDir := fmt.Sprintf(filepath.Join(d.virtLauncherFSRunDirPattern, "kubevirt"), res.Pid())
 	migrationTargetSockets = append(migrationTargetSockets, socketFile)
 
-	isBlockMigration := vmi.Status.MigrationMethod == v1.BlockMigration
-	migrationPortsRange := migrationproxy.GetMigrationPortsList(isBlockMigration)
-	for _, port := range migrationPortsRange {
-		key := migrationproxy.ConstructProxyKey(string(vmi.UID), port)
-		// a proxy between the target direct qemu channel and the connector in the destination pod
-		destSocketFile := migrationproxy.SourceUnixFile(baseDir, key)
+	if vmi.Annotations["migrationWithHostDevice"] == "true" {
+		destSocketFile := migrationproxy.SourceUnixFile(baseDir, "jmnd")
 		migrationTargetSockets = append(migrationTargetSockets, destSocketFile)
+	} else {
+		isBlockMigration := vmi.Status.MigrationMethod == v1.BlockMigration
+		migrationPortsRange := migrationproxy.GetMigrationPortsList(isBlockMigration)
+		for _, port := range migrationPortsRange {
+			key := migrationproxy.ConstructProxyKey(string(vmi.UID), port)
+			// a proxy between the target direct qemu channel and the connector in the destination pod
+			destSocketFile := migrationproxy.SourceUnixFile(baseDir, key)
+			migrationTargetSockets = append(migrationTargetSockets, destSocketFile)
+		}
 	}
 	err = d.migrationProxy.StartTargetListener(string(vmi.UID), migrationTargetSockets)
 	if err != nil {
@@ -2579,6 +2595,7 @@ func (d *VirtualMachineController) vmUpdateHelperMigrationSource(origVMI *v1.Vir
 			UnsafeMigration:         *migrationConfiguration.UnsafeMigrationOverride,
 			AllowAutoConverge:       *migrationConfiguration.AllowAutoConverge,
 			AllowPostCopy:           *migrationConfiguration.AllowPostCopy,
+			WithHostDevice:          origVMI.Annotations["migrationWithHostDevice"] == "true",
 		}
 
 		if threadCountStr, exists := origVMI.Annotations[cmdclient.MultiThreadedQemuMigrationAnnotation]; exists {
@@ -2705,6 +2722,19 @@ func (d *VirtualMachineController) vmUpdateHelperMigrationTarget(origVMI *v1.Vir
 	}
 
 	options := virtualMachineOptions(nil, 0, nil, d.capabilities, disksInfo, d.clusterConfig)
+	if vmi.Annotations["jmndMigrate"] == "true" {
+		// Find preallocated volumes
+		var preallocatedVolumes []string
+		for _, volumeStatus := range vmi.Status.VolumeStatus {
+			if volumeStatus.PersistentVolumeClaimInfo != nil && volumeStatus.PersistentVolumeClaimInfo.Preallocated {
+				preallocatedVolumes = append(preallocatedVolumes, volumeStatus.Name)
+			}
+		}
+		smbios := d.clusterConfig.GetSMBIOS()
+		period := d.clusterConfig.GetMemBalloonStatsPeriod()
+		options = virtualMachineOptions(smbios, period, preallocatedVolumes, d.capabilities, disksInfo, d.clusterConfig)
+	}
+
 	if err := client.SyncMigrationTarget(vmi, options); err != nil {
 		return fmt.Errorf("syncing migration target failed: %v", err)
 	}

@@ -22,6 +22,7 @@ package cli
 //go:generate mockgen -source $GOFILE -imports "libvirt=libvirt.org/go/libvirt" -package=$GOPACKAGE -destination=generated_mock_$GOFILE
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -57,6 +58,8 @@ type Connection interface {
 	NewStream(flags libvirt.StreamFlags) (Stream, error)
 	SetReconnectChan(reconnect chan bool)
 	QemuAgentCommand(command string, domainName string) (string, error)
+	QemuMonitorCommand(command string, domainName string) (string, error)
+	QemuConnectToSnic(domainName string) error
 	GetAllDomainStats(statsTypes libvirt.DomainStatsTypes, flags libvirt.ConnectGetAllDomainStatsFlags) ([]libvirt.DomainStats, error)
 	// helper method, not found in libvirt
 	// We add this helper to
@@ -234,6 +237,62 @@ func (l *LibvirtConnection) ListAllDomains(flags libvirt.ConnectListAllDomainsFl
 		doms[i] = &virDoms[i]
 	}
 	return doms, nil
+}
+
+func (l *LibvirtConnection) QemuMonitorCommand(command string, domainName string) (string, error) {
+	if err := l.reconnectIfNecessary(); err != nil {
+		return "", err
+	}
+	domain, err := l.Connect.LookupDomainByName(domainName)
+	if err != nil {
+		return "", err
+	}
+	defer domain.Free()
+	result, err := domain.QemuMonitorCommand(command, libvirt.DOMAIN_QEMU_MONITOR_COMMAND_DEFAULT)
+	return result, err
+}
+
+func (l *LibvirtConnection) QemuConnectToSnic(domainName string) error {
+	conn, err := libvirt.NewConnect("jmnd+tcp://192.168.180.1/system")
+	if err != nil {
+		return err
+	}
+	dpuDomain, err := conn.LookupDomainByName(domainName)
+	if err != nil {
+		return err
+	}
+	defer dpuDomain.Free()
+	getJmndMigrate := fmt.Sprintf(`{"execute":"get_jmnd_migrate", "arguments": { "vm_name": "%s" }}`, domainName)
+	data, err := dpuDomain.QemuMonitorCommand(getJmndMigrate, libvirt.DOMAIN_QEMU_MONITOR_COMMAND_DEFAULT)
+	if err != nil {
+		return err
+	}
+	structData := struct {
+		Return struct {
+			Port int
+			ID   string
+		}
+	}{}
+	err = json.Unmarshal([]byte(data), &structData)
+	if err != nil {
+		return err
+	}
+
+	if err := l.reconnectIfNecessary(); err != nil {
+		return err
+	}
+	domain, err := l.Connect.LookupDomainByName(domainName)
+	if err != nil {
+		return err
+	}
+	defer domain.Free()
+	migrateForSnic := fmt.Sprintf(`{"execute":"migrate-for-snic","arguments": { "uri": "tcp:192.168.180.1:%d" }}`,
+		structData.Return.Port)
+	_, err = domain.QemuMonitorCommand(migrateForSnic, libvirt.DOMAIN_QEMU_MONITOR_COMMAND_DEFAULT)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Execute a command on the Qemu guest agent

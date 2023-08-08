@@ -177,7 +177,11 @@ func (m *migrationProxyManager) StartTargetListener(key string, targetUnixFiles 
 	}
 	for _, targetUnixFile := range targetUnixFiles {
 		// 0 means random port is used
-		proxy := NewTargetProxy(zeroAddress, 0, serverTLSConfig, clientTLSConfig, targetUnixFile, key)
+		port := 0
+		if strings.HasSuffix(targetUnixFile, "jmnd-source.sock") {
+			port = 6666
+		}
+		proxy := NewTargetProxy(zeroAddress, port, serverTLSConfig, clientTLSConfig, targetUnixFile, key)
 
 		err := proxy.Start()
 		if err != nil {

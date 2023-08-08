@@ -683,7 +683,7 @@ func (m *migrationMonitor) hasMigrationErr() error {
 	}
 }
 
-func (m *migrationMonitor) startMonitor() {
+func (m *migrationMonitor) startMonitor(jmndMigrationChan chan<- bool) {
 	var completedJobInfo *libvirt.DomainJobInfo
 	vmi := m.vmi
 
@@ -721,6 +721,28 @@ func (m *migrationMonitor) startMonitor() {
 				abortStatus = v1.MigrationAbortSucceeded
 			}
 			m.l.setMigrationResult(true, fmt.Sprintf("Live migration failed %v", m.migrationFailedWithError), abortStatus)
+			return
+		}
+
+		if m.options.WithHostDevice {
+			var failed bool
+			var reason string
+			result, err := m.l.virConn.QemuMonitorCommand(`{"execute":"query-migrate"}`, domName)
+			if err != nil {
+				logger.Reason(err).Error(liveMigrationFailed)
+				failed = true
+				reason = fmt.Sprintf("%v", err)
+			} else if strings.Contains(result, "completed") {
+				logger.Info("jmnd Migration has been completed")
+			} else if strings.Contains(result, "failed") {
+				logger.Info("jmnd Migration job failed: " + result)
+				failed = true
+				reason = result
+			} else {
+				continue
+			}
+			m.l.setMigrationResult(failed, reason, "")
+			jmndMigrationChan <- !failed
 			return
 		}
 
@@ -860,6 +882,31 @@ func generateMigrationParams(dom cli.VirDomain, vmi *v1.VirtualMachineInstance, 
 	return params, nil
 }
 
+func (l *LibvirtDomainManager) jmndMigrateHelper(vmi *v1.VirtualMachineInstance, options *cmdclient.MigrationOptions) error {
+	var err error
+
+	domName := api.VMINamespaceKeyFunc(vmi)
+	err = l.virConn.QemuConnectToSnic(domName)
+	if err != nil {
+		return err
+	}
+
+	migrateCmd := fmt.Sprintf(
+		`{"execute":"migrate", "arguments": { "uri": "unix:/run/kubevirt/migrationproxy/%s-source.sock" }}`,
+		string(vmi.UID),
+	)
+	log.Log.Object(vmi).Infof("before jmnd migrate, migrateCmd %s, domName %s", migrateCmd, domName)
+
+	result, err := l.virConn.QemuMonitorCommand(migrateCmd, domName)
+	if err != nil {
+		return err
+	}
+
+	log.Log.Object(vmi).Infof("after jmnd migrate, result %s", result)
+
+	return nil
+}
+
 func (l *LibvirtDomainManager) migrateHelper(vmi *v1.VirtualMachineInstance, options *cmdclient.MigrationOptions) error {
 
 	var err error
@@ -950,16 +997,29 @@ func (l *LibvirtDomainManager) migrate(vmi *v1.VirtualMachineInstance, options *
 		log.Log.Object(vmi).Info("UNSAFE_MIGRATION flag is set, libvirt's migration checks will be disabled!")
 	}
 
+	jmndMigrationChan := make(chan bool)
+
 	// From here on out, any error encountered must be sent to the
 	// migrationError channel which is processed by the liveMigrationMonitor
 	// go routine.
 	monitor := newMigrationMonitor(vmi, l, options, migrationErrorChan)
-	go monitor.startMonitor()
+	go monitor.startMonitor(jmndMigrationChan)
 
-	err := l.migrateHelper(vmi, options)
+	var err error
+	if options.WithHostDevice {
+		err = l.jmndMigrateHelper(vmi, options)
+	} else {
+		err = l.migrateHelper(vmi, options)
+	}
 	if err != nil {
 		log.Log.Object(vmi).Reason(err).Error(liveMigrationFailed)
 		migrationErrorChan <- err
+		return
+	}
+	if options.WithHostDevice && <-jmndMigrationChan {
+		if err = l.KillVMI(vmi); err != nil {
+			log.Log.Object(vmi).Reason(err).Error("jmnd migrate kill src vm failed.")
+		}
 		return
 	}
 

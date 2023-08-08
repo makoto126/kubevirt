@@ -79,6 +79,7 @@ type MigrationOptions struct {
 	AllowAutoConverge        bool
 	AllowPostCopy            bool
 	ParallelMigrationThreads *uint
+	WithHostDevice           bool
 }
 
 type LauncherClient interface {

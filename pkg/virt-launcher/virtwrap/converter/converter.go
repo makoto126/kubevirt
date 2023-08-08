@@ -1869,6 +1869,13 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 		}
 	}
 
+	if vmi.Annotations["migrationWithHostDevice"] == "true" {
+		domain.Spec.QEMUCmd.QEMUArg = append(domain.Spec.QEMUCmd.QEMUArg,
+			api.Arg{Value: "-incoming"},
+			api.Arg{Value: "unix:/run/kubevirt/migrationproxy/jmnd-source.sock"},
+		)
+	}
+
 	return nil
 }
 

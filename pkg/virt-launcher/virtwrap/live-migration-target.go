@@ -66,6 +66,37 @@ func (l *LibvirtDomainManager) prepareMigrationTarget(
 ) error {
 	logger := log.Log.Object(vmi)
 
+	//jmnd socket migrate
+	if vmi.Annotations["migrationWithHostDevice"] == "true" {
+		logger.Info("jmnd socket migrate")
+
+		vmi.Status.Phase = v1.Scheduled
+
+		// Prepare the directory for migration sockets
+		migrationSocketsPath := filepath.Join(l.virtShareDir, "migrationproxy")
+		err := util.MkdirAllWithNosec(migrationSocketsPath)
+		if err != nil {
+			logger.Reason(err).Error("failed to create the migration sockets directory")
+			return err
+		}
+		if err := diskutils.DefaultOwnershipManager.UnsafeSetFileOwnership(migrationSocketsPath); err != nil {
+			logger.Reason(err).Error("failed to change ownership on migration sockets directory")
+			return err
+		}
+		domainSpec, err := l.SyncVMI(vmi, allowEmulation, options)
+		if err != nil {
+			logger.Reason(err).Error("failed to SyncVMI")
+			return err
+		}
+		err = l.virConn.QemuConnectToSnic(domainSpec.Name)
+		if err != nil {
+			logger.Reason(err).Error("failed to connect to snic")
+			return err
+		}
+
+		return nil
+	}
+
 	c, err := l.generateConverterContext(vmi, allowEmulation, options, true)
 	if err != nil {
 		return fmt.Errorf("Failed to generate libvirt domain from VMI spec: %v", err)
