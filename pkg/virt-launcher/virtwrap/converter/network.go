@@ -142,6 +142,11 @@ func CreateDomainInterfaces(vmi *v1.VirtualMachineInstance, domain *api.Domain, 
 			domainIface.Source = api.InterfaceSource{
 				Device: vdpaDevicePool[0],
 			}
+			if iface.MacAddress != "" {
+				domainIface.MAC = &api.MAC{
+					MAC: iface.MacAddress,
+				}
+			}
 			vdpaDevicePool = vdpaDevicePool[1:]
 		}
 
