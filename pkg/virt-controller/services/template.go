@@ -683,8 +683,23 @@ func (t *templateService) newContainerSpecRenderer(vmi *v1.VirtualMachineInstanc
 	}
 
 	const computeContainerName = "compute"
+	launcherImage := t.launcherImage
+
+	for _, hostDevice := range vmi.Spec.Domain.Devices.HostDevices {
+		if hostDevice.DeviceName == "vm.jmnd.com/virtio_blk" {
+			launcherImage = t.launcherImage + "_virtio"
+			break
+		}
+	}
+	for _, iface := range vmi.Spec.Domain.Devices.Interfaces {
+		if iface.SRIOV != nil {
+			launcherImage = t.launcherImage + "_virtio"
+			break
+		}
+	}
+
 	containerRenderer := NewContainerSpecRenderer(
-		computeContainerName, t.launcherImage, t.clusterConfig.GetImagePullPolicy(), computeContainerOpts...)
+		computeContainerName, launcherImage, t.clusterConfig.GetImagePullPolicy(), computeContainerOpts...)
 	return containerRenderer
 }
 
