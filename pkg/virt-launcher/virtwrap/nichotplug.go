@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"kubevirt.io/kubevirt/pkg/network/namescheme"
+	"kubevirt.io/kubevirt/pkg/network/sriov"
 
 	"libvirt.org/go/libvirt"
 
@@ -65,7 +66,7 @@ func newVirtIOInterfaceManager(
 }
 
 func (vim *virtIOInterfaceManager) hotplugVirtioInterface(vmi *v1.VirtualMachineInstance, currentDomain *api.Domain, updatedDomain *api.Domain) error {
-	for _, network := range networksToHotplugWhoseInterfacesAreNotInTheDomain(vmi, indexedDomainInterfaces(currentDomain)) {
+	for _, network := range networksToHotplugWhoseInterfacesAreNotInTheDomain(vmi, indexedDomainInterfaces(currentDomain), indexedDomainHostdevs(currentDomain)) {
 		log.Log.Infof("will hot plug %s", network.Name)
 
 		if err := vim.configurator.SetupPodNetworkPhase2(updatedDomain, []v1.Network{network}); err != nil {
@@ -141,13 +142,16 @@ func lookupDomainInterfaceByName(domainIfaces []api.Interface, networkName strin
 	return nil
 }
 
-func networksToHotplugWhoseInterfacesAreNotInTheDomain(vmi *v1.VirtualMachineInstance, indexedDomainIfaces map[string]api.Interface) []v1.Network {
+func networksToHotplugWhoseInterfacesAreNotInTheDomain(vmi *v1.VirtualMachineInstance, indexedDomainIfaces map[string]api.Interface, indexedDomainHdevs map[string]api.HostDevice) []v1.Network {
 	var networksToHotplug []v1.Network
 	interfacesToHoplug := netvmispec.IndexInterfacesFromStatus(
 		vmi.Status.Interfaces,
 		func(ifaceStatus v1.VirtualMachineInstanceNetworkInterface) bool {
 			_, exists := indexedDomainIfaces[ifaceStatus.Name]
 			vmiSpecIface := netvmispec.LookupInterfaceByName(vmi.Spec.Domain.Devices.Interfaces, ifaceStatus.Name)
+			if vmiSpecIface != nil && vmiSpecIface.SRIOV != nil {
+				_, exists = indexedDomainHdevs[sriov.AliasPrefix+ifaceStatus.Name]
+			}
 
 			return netvmispec.ContainsInfoSource(
 				ifaceStatus.InfoSource, netvmispec.InfoSourceMultusStatus,
@@ -170,6 +174,14 @@ func indexedDomainInterfaces(domain *api.Domain) map[string]api.Interface {
 		domainInterfaces[iface.Alias.GetName()] = iface
 	}
 	return domainInterfaces
+}
+
+func indexedDomainHostdevs(domain *api.Domain) map[string]api.HostDevice {
+	domainHostdevs := map[string]api.HostDevice{}
+	for _, hostdev := range domain.Spec.Devices.HostDevices {
+		domainHostdevs[hostdev.Alias.GetName()] = hostdev
+	}
+	return domainHostdevs
 }
 
 // withNetworkIfacesResources adds network interfaces as placeholders to the domain spec

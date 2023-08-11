@@ -24,6 +24,7 @@ import (
 	"fmt"
 
 	"kubevirt.io/kubevirt/pkg/network/namescheme"
+	"kubevirt.io/kubevirt/pkg/network/sriov"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -44,14 +45,15 @@ var _ = Describe("nic hotplug on virt-launcher", func() {
 		networkName = "n1"
 	)
 
-	DescribeTable("networksToHotplugWhoseInterfacesAreNotInTheDomain", func(vmi *v1.VirtualMachineInstance, domainIfaces map[string]api.Interface, expectedNetworks []v1.Network) {
+	DescribeTable("networksToHotplugWhoseInterfacesAreNotInTheDomain", func(vmi *v1.VirtualMachineInstance, domainIfaces map[string]api.Interface, domainHdevs map[string]api.HostDevice, expectedNetworks []v1.Network) {
 		Expect(
-			networksToHotplugWhoseInterfacesAreNotInTheDomain(vmi, domainIfaces),
+			networksToHotplugWhoseInterfacesAreNotInTheDomain(vmi, domainIfaces, domainHdevs),
 		).To(ConsistOf(expectedNetworks))
 	},
 		Entry("vmi with no networks, and no interfaces in the domain",
 			&v1.VirtualMachineInstance{Spec: v1.VirtualMachineInstanceSpec{Networks: []v1.Network{}}},
 			map[string]api.Interface{},
+			map[string]api.HostDevice{},
 			nil,
 		),
 		Entry("vmi with 1 network, and an associated interface in the domain",
@@ -59,6 +61,7 @@ var _ = Describe("nic hotplug on virt-launcher", func() {
 				Spec: v1.VirtualMachineInstanceSpec{Networks: []v1.Network{generateNetwork(networkName, nadName)}},
 			},
 			map[string]api.Interface{networkName: {Alias: api.NewUserDefinedAlias(networkName)}},
+			map[string]api.HostDevice{},
 			nil,
 		),
 		Entry("vmi with 1 network (when the pod interface is *not* ready), with no interfaces in the domain",
@@ -66,6 +69,7 @@ var _ = Describe("nic hotplug on virt-launcher", func() {
 				Spec: v1.VirtualMachineInstanceSpec{Networks: []v1.Network{generateNetwork(networkName, nadName)}},
 			},
 			map[string]api.Interface{},
+			map[string]api.HostDevice{},
 			nil,
 		),
 		Entry("vmi with 1 network (when the pod interface *is* ready), but already present in the domain",
@@ -79,6 +83,7 @@ var _ = Describe("nic hotplug on virt-launcher", func() {
 				},
 			},
 			map[string]api.Interface{networkName: {Alias: api.NewUserDefinedAlias(networkName)}},
+			map[string]api.HostDevice{},
 			nil,
 		),
 		Entry("vmi with 1 network marked for removal, pod interface ready and no interfaces in the domain",
@@ -98,6 +103,7 @@ var _ = Describe("nic hotplug on virt-launcher", func() {
 				},
 			},
 			map[string]api.Interface{},
+			map[string]api.HostDevice{},
 			nil,
 		),
 		Entry("vmi with 1 network (when the pod interface *is* ready), but no interfaces in the domain",
@@ -114,7 +120,25 @@ var _ = Describe("nic hotplug on virt-launcher", func() {
 				},
 			},
 			map[string]api.Interface{},
+			map[string]api.HostDevice{},
 			[]v1.Network{generateNetwork(networkName, nadName)},
+		),
+		Entry("vmi with 1 network (when the pod interface *is* ready and *is* SRIOV), but already present in the domain",
+			&v1.VirtualMachineInstance{
+				Spec: v1.VirtualMachineInstanceSpec{
+					Networks: []v1.Network{generateNetwork(networkName, nadName)},
+					Domain:   v1.DomainSpec{Devices: v1.Devices{Interfaces: []v1.Interface{{Name: networkName, InterfaceBindingMethod: v1.InterfaceBindingMethod{SRIOV: &v1.InterfaceSRIOV{}}}}}},
+				},
+				Status: v1.VirtualMachineInstanceStatus{
+					Interfaces: []v1.VirtualMachineInstanceNetworkInterface{{
+						Name:       networkName,
+						InfoSource: vmispec.InfoSourceMultusStatus,
+					}},
+				},
+			},
+			map[string]api.Interface{},
+			map[string]api.HostDevice{sriov.AliasPrefix + networkName: {Alias: api.NewUserDefinedAlias(sriov.AliasPrefix + networkName)}},
+			nil,
 		),
 	)
 
