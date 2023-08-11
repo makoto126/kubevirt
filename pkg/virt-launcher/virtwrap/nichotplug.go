@@ -74,24 +74,38 @@ func (vim *virtIOInterfaceManager) hotplugVirtioInterface(vmi *v1.VirtualMachine
 		}
 
 		relevantIface := lookupDomainInterfaceByName(updatedDomain.Spec.Devices.Interfaces, network.Name)
-		if relevantIface == nil {
-			return fmt.Errorf("could not retrieve the api.Interface object from the dummy domain")
+		relevantHdev := lookupDomainHostdevByName(updatedDomain.Spec.Devices.HostDevices, sriov.AliasPrefix+network.Name)
+		if relevantIface == nil && relevantHdev == nil {
+			return fmt.Errorf("could not retrieve the api.Interface/api.HostDevice object from the dummy domain")
 		}
 
 		ifaceMAC := ""
-		if relevantIface.MAC != nil {
+		if relevantIface != nil && relevantIface.MAC != nil {
 			ifaceMAC = relevantIface.MAC.MAC
 		}
 		log.Log.Infof("will hot plug %q with MAC %q", network.Name, ifaceMAC)
-		ifaceXML, err := xml.Marshal(relevantIface)
-		if err != nil {
-			return err
+		if relevantIface != nil {
+			ifaceXML, err := xml.Marshal(relevantIface)
+			if err != nil {
+				return err
+			}
+
+			if err := vim.dom.AttachDeviceFlags(strings.ToLower(string(ifaceXML)), affectDeviceLiveAndConfigLibvirtFlags); err != nil {
+				log.Log.Reason(err).Errorf("libvirt failed to attach interface %s: %v", network.Name, err)
+				return err
+			}
+		} else {
+			hdevXML, err := xml.Marshal(relevantHdev)
+			if err != nil {
+				return err
+			}
+
+			if err := vim.dom.AttachDevice(strings.ToLower(string(hdevXML))); err != nil {
+				log.Log.Reason(err).Errorf("libvirt failed to attach hostdev %s: %v", network.Name, err)
+				return err
+			}
 		}
 
-		if err := vim.dom.AttachDeviceFlags(strings.ToLower(string(ifaceXML)), affectDeviceLiveAndConfigLibvirtFlags); err != nil {
-			log.Log.Reason(err).Errorf("libvirt failed to attach interface %s: %v", network.Name, err)
-			return err
-		}
 	}
 	return nil
 }
@@ -110,6 +124,21 @@ func (vim *virtIOInterfaceManager) hotUnplugVirtioInterface(vmi *v1.VirtualMachi
 			return derr
 		}
 	}
+
+	for _, domainHdev := range hostdevsToHotUnplug(vmi.Spec.Domain.Devices.Interfaces, currentDomain.Spec.Devices.HostDevices) {
+		log.Log.Infof("preparing to hot-unplug %s", domainHdev.Alias.GetName())
+
+		hdevXML, err := xml.Marshal(domainHdev)
+		if err != nil {
+			return err
+		}
+
+		if derr := vim.dom.DetachDevice(strings.ToLower(string(hdevXML))); derr != nil {
+			log.Log.Reason(derr).Errorf("libvirt failed to detach hostdev %s: %v", domainHdev.Alias.GetName(), derr)
+			return derr
+		}
+	}
+
 	return nil
 }
 
@@ -120,12 +149,25 @@ func interfacesToHotUnplug(vmiSpecInterfaces []v1.Interface, domainSpecInterface
 	var domainIfacesToRemove []api.Interface
 	for _, vmiIface := range ifaces2remove {
 		if domainIface := lookupDomainInterfaceByName(domainSpecInterfaces, vmiIface.Name); domainIface != nil {
-			if hasDeviceWithHashedTapName(domainIface.Target, vmiIface) {
+			if hasDeviceWithHashedTapName(domainIface.Target, vmiIface) || vmiIface.VDPA != nil {
 				domainIfacesToRemove = append(domainIfacesToRemove, *domainIface)
 			}
 		}
 	}
 	return domainIfacesToRemove
+}
+
+func hostdevsToHotUnplug(vmiSpecInterfaces []v1.Interface, domainSpecHostdevs []api.HostDevice) []api.HostDevice {
+	ifaces2remove := netvmispec.FilterInterfacesSpec(vmiSpecInterfaces, func(i v1.Interface) bool {
+		return i.SRIOV != nil && i.State == v1.InterfaceStateAbsent
+	})
+	var domainHdevsToRemove []api.HostDevice
+	for _, vmiIface := range ifaces2remove {
+		if domainHdev := lookupDomainHostdevByName(domainSpecHostdevs, sriov.AliasPrefix+vmiIface.Name); domainHdev != nil {
+			domainHdevsToRemove = append(domainHdevsToRemove, *domainHdev)
+		}
+	}
+	return domainHdevsToRemove
 }
 
 func hasDeviceWithHashedTapName(target *api.InterfaceTarget, vmiIface v1.Interface) bool {
@@ -137,6 +179,15 @@ func lookupDomainInterfaceByName(domainIfaces []api.Interface, networkName strin
 	for _, iface := range domainIfaces {
 		if iface.Alias.GetName() == networkName {
 			return &iface
+		}
+	}
+	return nil
+}
+
+func lookupDomainHostdevByName(domainHdevs []api.HostDevice, networkName string) *api.HostDevice {
+	for _, hdev := range domainHdevs {
+		if hdev.Alias.GetName() == networkName {
+			return &hdev
 		}
 	}
 	return nil

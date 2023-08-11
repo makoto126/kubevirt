@@ -3060,6 +3060,9 @@ func (d *VirtualMachineController) vmUpdateHelperDefault(origVMI *v1.VirtualMach
 
 func (d *VirtualMachineController) hotplugSriovInterfaces(vmi *v1.VirtualMachineInstance) error {
 	sriovSpecInterfaces := netvmispec.FilterSRIOVInterfaces(vmi.Spec.Domain.Devices.Interfaces)
+	sriovSpecInterfaces = netvmispec.FilterInterfacesSpec(sriovSpecInterfaces, func(iface v1.Interface) bool {
+		return iface.State != v1.InterfaceStateAbsent
+	})
 	sriovStatusInterfaces := netvmispec.FilterStatusInterfacesByNames(vmi.Status.Interfaces, netvmispec.InterfacesNames(sriovSpecInterfaces))
 	if len(sriovSpecInterfaces) == len(sriovStatusInterfaces) {
 		d.sriovHotplugExecutorPool.Delete(vmi.UID)

@@ -394,6 +394,8 @@ func ApplyNetworkInterfaceRequestOnVMISpec(vmiSpec *v1.VirtualMachineInstanceSpe
 			newNetwork, newIface := newNetworkInterface(request.AddInterfaceOptions.Name, request.AddInterfaceOptions.NetworkAttachmentDefinitionName)
 			vmiSpec.Networks = append(vmiSpec.Networks, newNetwork)
 			vmiSpec.Domain.Devices.Interfaces = append(vmiSpec.Domain.Devices.Interfaces, newIface)
+		} else if iface.State == v1.InterfaceStateAbsent {
+			iface.State = ""
 		}
 	case request.RemoveInterfaceOptions != nil:
 		if iface := vmispec.LookupInterfaceByName(vmiSpec.Domain.Devices.Interfaces, request.RemoveInterfaceOptions.Name); iface != nil {
