@@ -1473,9 +1473,9 @@ func (d *VirtualMachineController) calculateLiveMigrationCondition(vmi *v1.Virtu
 		return newNonMigratableCondition("VMI uses virtiofs", v1.VirtualMachineInstanceReasonVirtIOFSNotMigratable), isBlockMigration
 	}
 
-	if vmiContainsPCIHostDevice(vmi) {
-		return newNonMigratableCondition("VMI uses a PCI host devices", v1.VirtualMachineInstanceReasonHostDeviceNotMigratable), isBlockMigration
-	}
+	// if vmiContainsPCIHostDevice(vmi) {
+	// 	return newNonMigratableCondition("VMI uses a PCI host devices", v1.VirtualMachineInstanceReasonHostDeviceNotMigratable), isBlockMigration
+	// }
 
 	if util.IsSEVVMI(vmi) {
 		return newNonMigratableCondition("VMI uses SEV", v1.VirtualMachineInstanceReasonSEVNotMigratable), isBlockMigration
@@ -1644,7 +1644,22 @@ func (d *VirtualMachineController) migrationOrphanedSourceNodeExecute(vmi *v1.Vi
 
 func (d *VirtualMachineController) migrationTargetExecute(vmi *v1.VirtualMachineInstance, vmiExists bool, domain *api.Domain) error {
 
-	vmi.Annotations["migrationWithHostDevice"] = fmt.Sprintf("%t", len(domain.Spec.Devices.HostDevices) > 0)
+	migrationWithHostDevice := false
+
+	for _, hostDevice := range vmi.Spec.Domain.Devices.HostDevices {
+		if hostDevice.DeviceName == "vm.jmnd.com/virtio_blk" {
+			migrationWithHostDevice = true
+			break
+		}
+	}
+	for _, iface := range vmi.Spec.Domain.Devices.Interfaces {
+		if iface.SRIOV != nil {
+			migrationWithHostDevice = true
+			break
+		}
+	}
+
+	vmi.Annotations["migrationWithHostDevice"] = fmt.Sprintf("%t", migrationWithHostDevice)
 	_, err := d.clientset.VirtualMachineInstance(vmi.ObjectMeta.Namespace).Update(context.Background(), vmi)
 	if err != nil {
 		return err
@@ -2721,8 +2736,14 @@ func (d *VirtualMachineController) vmUpdateHelperMigrationTarget(origVMI *v1.Vir
 		}
 	}
 
+	// set runtime limits as needed
+	err = d.podIsolationDetector.AdjustResources(vmi, d.clusterConfig.GetConfig().AdditionalGuestMemoryOverheadRatio)
+	if err != nil {
+		return fmt.Errorf("failed to adjust resources: %v", err)
+	}
+
 	options := virtualMachineOptions(nil, 0, nil, d.capabilities, disksInfo, d.clusterConfig)
-	if vmi.Annotations["jmndMigrate"] == "true" {
+	if vmi.Annotations["migrationWithHostDevice"] == "true" {
 		// Find preallocated volumes
 		var preallocatedVolumes []string
 		for _, volumeStatus := range vmi.Status.VolumeStatus {

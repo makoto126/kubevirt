@@ -65,9 +65,9 @@ func CreateHostDevices(vmi *v1.VirtualMachineInstance) ([]api.HostDevice, error)
 func newPCIAddressPoolWithNetworkStatusFromFile(path string) (*PCIAddressWithNetworkStatusPool, error) {
 	networkPCIMapBytes, err := readFileUntilNotEmpty(path)
 	if err != nil {
-		if isFileEmptyAfterTimeout(err, networkPCIMapBytes) {
-			return nil, err
-		}
+		// if isFileEmptyAfterTimeout(err, networkPCIMapBytes) {
+		// 	return nil, err
+		// }
 		return nil, nil
 	}
 
